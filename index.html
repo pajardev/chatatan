@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
+  <title>Catatan Modern</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow-x: hidden;
+      background-color: #0f172a;
+      color: #f8fafc;
+      font-family: sans-serif;
+    }
+    header, nav, .bg-white {
+      background-color: #1e293b !important;
+      color: #f1f5f9 !important;
+    }
+    input, textarea, select {
+      background-color: #334155;
+      color: #f1f5f9;
+      border-color: #475569;
+    }
+    small, .text-gray-500, .text-gray-400 {
+      color: #cbd5e1 !important;
+    }
+    .shadow {
+      box-shadow: 0 0 0 1px #334155, 0 2px 10px rgba(0, 0, 0, 0.4) !important;
+    }
+    .transition-transform {
+      transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+    .sidebar-enter {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    .sidebar-active {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    .overlay-fade {
+      transition: opacity 0.3s ease;
+      opacity: 0;
+    }
+    .overlay-active {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body class="min-h-screen relative">
+
+  <header class="shadow p-4 flex justify-between items-center">
+    <div class="flex items-center gap-4">
+      <button id="btnMenu" class="sm:hidden focus:outline-none">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+      <h1 class="text-xl font-bold">Catatan</h1>
+    </div>
+    <button id="btnAdd" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-xl">+ Tambah</button>
+  </header>
+
+  <div id="overlay" class="fixed inset-0 z-30 bg-black/30 overlay-fade hidden sm:hidden"></div>
+
+  <nav id="sidebar" class="shadow w-48 fixed top-0 left-0 h-full z-40 p-4 transition-transform sidebar-enter hidden sm:block">
+    <h2 class="text-lg font-semibold mb-4">Menu</h2>
+    <ul class="space-y-2">
+      <li><button onclick="filterNotes('all')" class="text-blue-400">📓 Semua Catatan</button></li>
+      <li><button onclick="filterNotes('archived')" class="text-yellow-400">📁 Arsip</button></li>
+      <li><button onclick="filterNotes('trash')" class="text-red-400">🗑️ Sampah</button></li>
+      <li><button onclick="showAbout()" class="text-gray-400">ℹ️ Tentang</button></li>
+      <li><button onclick="downloadAllNotes()" class="text-pink-400">🆘 Darurat (Unduh Semua)</button></li>
+    </ul>
+  </nav>
+
+  <main class="p-4 sm:ml-52 grid sm:grid-cols-2 lg:grid-cols-3 gap-4" id="notesContainer"></main>
+
+  <!-- Modal Tambah/Edit -->
+  <div id="modal" class="fixed inset-0 bg-black/40 flex items-center justify-center hidden z-50">
+    <div class="p-6 rounded-xl w-full max-w-md shadow bg-[#1e293b]">
+      <h2 class="text-lg font-bold mb-4">Catatan</h2>
+      <input type="password" id="notePIN" class="w-full p-2 border rounded mb-2" placeholder="PIN (opsional)" />
+      <input type="text" id="noteText" class="w-full p-2 border rounded mb-2" placeholder="Tulis catatan..." />
+      <input type="file" id="noteImage" accept="image/*" class="mb-2" />
+      <input type="datetime-local" id="reminderTime" class="w-full p-2 border rounded mb-2" />
+      <div class="flex justify-end gap-2">
+        <button id="btnCancel" class="px-4 py-2 bg-gray-500 text-white rounded-xl">Batal</button>
+        <button id="btnSave" class="px-4 py-2 bg-blue-600 text-white rounded-xl">Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Tentang -->
+  <div id="aboutModal" class="fixed inset-0 bg-black/40 flex items-center justify-center hidden z-50">
+    <div class="p-6 rounded-xl w-full max-w-md text-center shadow bg-[#1e293b]">
+      <h2 class="text-lg font-bold mb-2">Tentang Aplikasi</h2>
+      <p class="mb-2">Dibuat oleh <strong>Fajar_Developer</strong></p>
+      <p class="text-sm text-gray-400">Website catatan modern dengan fitur keren. Masih dalam pengembangan. Terima kasih telah mencoba!</p>
+      <button onclick="closeAbout()" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded-xl">Tutup</button>
+    </div>
+  </div>
+
+  <script>
+    const unlockedNotes = new Set(); // Menyimpan index catatan yang berhasil dibuka
+    const notesContainer = document.getElementById("notesContainer");
+    const modal = document.getElementById("modal");
+    const aboutModal = document.getElementById("aboutModal");
+    const btnAdd = document.getElementById("btnAdd");
+    const btnSave = document.getElementById("btnSave");
+    const btnCancel = document.getElementById("btnCancel");
+    const btnMenu = document.getElementById("btnMenu");
+    const sidebar = document.getElementById("sidebar");
+    const overlay = document.getElementById("overlay");
+    let editIndex = null;
+    let notes = JSON.parse(localStorage.getItem("notes") || "[]");
+    let currentFilter = "all";
+
+    btnMenu.onclick = () => {
+      sidebar.classList.remove("hidden");
+      overlay.classList.remove("hidden");
+      requestAnimationFrame(() => {
+        sidebar.classList.add("sidebar-active");
+        overlay.classList.add("overlay-active");
+      });
+    };
+
+    overlay.onclick = () => {
+      sidebar.classList.remove("sidebar-active");
+      overlay.classList.remove("overlay-active");
+      setTimeout(() => {
+        sidebar.classList.add("sidebar-enter");
+        sidebar.classList.add("hidden");
+        overlay.classList.add("hidden");
+      }, 300);
+    };
+
+    function renderNotes() {
+  notesContainer.innerHTML = "";
+
+  let filteredNotes = notes.filter(note => {
+    if (currentFilter === "archived") return note.archived;
+    if (currentFilter === "trash") return note.deleted;
+    return !note.deleted && !note.archived; // all
+  });
+
+  if (filteredNotes.length === 0) {
+    let message = "Tidak ada catatan.";
+    if (currentFilter === "archived") message = "Tidak ada arsip.";
+    if (currentFilter === "trash") message = "Tidak ada sampah.";
+
+    notesContainer.innerHTML = `
+      <div class="col-span-full text-center text-gray-400 mt-10">
+        <p class="text-lg font-semibold">${message}</p>
+      </div>`;
+    return;
+  }
+
+  filteredNotes.forEach((note, i) => {
+    const noteIndex = notes.indexOf(note); // gunakan index asli dari array notes
+
+    let actions = "";
+    if (note.deleted) {
+      actions = `
+        <button onclick="restoreNote(${noteIndex})" class="text-green-400">🕘 Urungkan</button>
+        <button onclick="deleteForever(${noteIndex})" class="text-red-400">🗑️ Hapus Permanen</button>`;
+    } else if (note.archived) {
+      actions = `<button onclick="unarchiveNote(${noteIndex})" class="text-blue-400">📂 Urungkan Arsip</button>`;
+    } else {
+      actions = `
+        <button onclick="editNote(${noteIndex})" class="text-blue-400">✏️ Edit</button>
+        <button onclick="archiveNote(${noteIndex})" class="text-yellow-400">Arsip</button>
+        <button onclick="deleteNote(${noteIndex})" class="text-red-400">Hapus</button>`;
+    }
+
+    if (note.pin) {
+      actions += `<button onclick="unlockNote(${noteIndex})" class="text-blue-400">🔓 Buka</button>`;
+    }
+
+    notesContainer.innerHTML += `
+      <div class="bg-[#1e293b] p-4 rounded-xl shadow">
+        ${
+  note.pin && !unlockedNotes.has(noteIndex)
+    ? `<div class="mb-2">🔒 Catatan terkunci</div>`
+    : `
+      ${note.image ? `<img src="${note.image}" class="w-full h-40 object-cover rounded mb-2" />` : ""}
+      <p class="mb-2 whitespace-pre-wrap">${note.text}</p>
+    `
+}
+        <small class="text-gray-400">${note.reminder ? `🔔 ${new Date(note.reminder).toLocaleString()}` : ""}</small>
+        <div class="flex flex-wrap gap-2 mt-2">${actions}</div>
+      </div>`;
+  });
+}
+
+
+    function editNote(index) {
+      const note = notes[index];
+      document.getElementById("noteText").value = note.text || "";
+      document.getElementById("noteImage").value = "";
+      document.getElementById("reminderTime").value = note.reminder || "";
+      document.getElementById("notePIN").value = note.pin || "";
+      editIndex = index;
+      modal.classList.remove("hidden");
+    }
+
+    function saveNote() {
+      const text = document.getElementById("noteText").value;
+      const imageFile = document.getElementById("noteImage").files[0];
+      const reminder = document.getElementById("reminderTime").value;
+      const pin = document.getElementById("notePIN").value;
+
+      if (!text && !imageFile && editIndex === null) return;
+
+      const saveData = (imageData = null) => {
+        if (editIndex !== null) {
+          notes[editIndex].text = text;
+          notes[editIndex].reminder = reminder;
+          notes[editIndex].pin = pin || null;
+          if (imageData) notes[editIndex].image = imageData;
+          editIndex = null;
+        } else {
+          notes.push({
+            text,
+            image: imageData,
+            reminder,
+            archived: false,
+            deleted: false,
+            createdAt: Date.now(),
+            reminderShown: false,
+            pin: pin || null,
+          });
+        }
+        localStorage.setItem("notes", JSON.stringify(notes));
+        renderNotes();
+        modal.classList.add("hidden");
+      };
+
+      if (imageFile) {
+        const reader = new FileReader();
+        reader.onload = () => saveData(reader.result);
+        reader.readAsDataURL(imageFile);
+      } else {
+        saveData();
+      }
+    }
+
+    function deleteNote(i) {
+      notes[i].deleted = true;
+      notes[i].deletedAt = Date.now();
+      localStorage.setItem("notes", JSON.stringify(notes));
+      renderNotes();
+    }
+
+    function archiveNote(i) {
+      notes[i].archived = true;
+      localStorage.setItem("notes", JSON.stringify(notes));
+      renderNotes();
+    }
+
+    function restoreNote(i) {
+      notes[i].deleted = false;
+      delete notes[i].deletedAt;
+      localStorage.setItem("notes", JSON.stringify(notes));
+      renderNotes();
+    }
+
+    function unarchiveNote(i) {
+      notes[i].archived = false;
+      localStorage.setItem("notes", JSON.stringify(notes));
+      renderNotes();
+    }
+
+    function deleteForever(i) {
+      if (confirm("Yakin ingin hapus catatan ini secara permanen?")) {
+        notes.splice(i, 1);
+        localStorage.setItem("notes", JSON.stringify(notes));
+        renderNotes();
+      }
+    }
+
+    function unlockNote(i) {
+  const input = prompt("Masukkan PIN:");
+  if (input === notes[i].pin) {
+    unlockedNotes.add(i); // tandai catatan sudah dibuka
+    alert("PIN benar. Catatan terbuka.");
+    renderNotes(); // render ulang agar gambar dan teks tampil
+  } else {
+    alert("PIN salah!");
+  }
+}
+
+    function filterNotes(tipe) {
+      currentFilter = tipe;
+      renderNotes();
+    }
+
+    function showAbout() {
+      aboutModal.classList.remove("hidden");
+    }
+
+    function closeAbout() {
+      aboutModal.classList.add("hidden");
+    }
+
+    function clearOldTrash() {
+      const now = Date.now();
+      notes = notes.filter(n => !(n.deleted && now - n.deletedAt > 2592000000));
+      localStorage.setItem("notes", JSON.stringify(notes));
+    }
+
+    function checkReminders() {
+      const now = Date.now();
+      notes.forEach((n, i) => {
+        if (n.reminder && !n.reminderShown && !n.deleted && !n.archived && new Date(n.reminder).getTime() <= now) {
+          if ("Notification" in window && Notification.permission === "granted") {
+            new Notification("🔔 Pengingat Catatan", {
+              body: n.text,
+              icon: "https://cdn-icons-png.flaticon.com/512/1827/1827392.png",
+            });
+          }
+          notes[i].reminderShown = true;
+          localStorage.setItem("notes", JSON.stringify(notes));
+        }
+      });
+    }
+
+    function requestNotificationPermission() {
+      if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission();
+      }
+    }
+
+    btnAdd.onclick = () => {
+      editIndex = null;
+      document.getElementById("noteText").value = "";
+      document.getElementById("noteImage").value = "";
+      document.getElementById("reminderTime").value = "";
+      document.getElementById("notePIN").value = "";
+      modal.classList.remove("hidden");
+    };
+
+    btnCancel.onclick = () => {
+      editIndex = null;
+      modal.classList.add("hidden");
+    };
+
+    btnSave.onclick = saveNote;
+    clearOldTrash();
+    renderNotes();
+    requestNotificationPermission();
+    checkReminders();
+    setInterval(checkReminders, 10000);
+  </script>
+  <script>
+  	function downloadAllNotes() {
+  if (notes.length === 0) {
+    alert("Tidak ada catatan untuk diunduh.");
+    return;
+  }
+
+  const zip = new JSZip();
+  const folder = zip.folder("catatan");
+
+  notes.forEach((note, i) => {
+    let text = `Catatan ${i + 1}\n`;
+    text += `Status: ${note.deleted ? "Sampah" : note.archived ? "Arsip" : "Aktif"}\n`;
+    text += `Teks: ${note.text || "-"}\n`;
+    text += note.reminder ? `Pengingat: ${new Date(note.reminder).toLocaleString()}\n` : "";
+    text += note.pin ? `PIN: 🔒 Terkunci\n` : "";
+    text += "\n";
+
+    folder.file(`catatan-${i + 1}.txt`, text);
+
+    if (note.image) {
+      // Tambah file gambar jika ada
+      const base64 = note.image.split(",")[1];
+      const ext = note.image.includes("image/png") ? "png" : "jpg";
+      folder.file(`gambar-${i + 1}.${ext}`, base64, { base64: true });
+    }
+  });
+
+  zip.generateAsync({ type: "blob" }).then(content => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(content);
+    a.download = "semua-catatan.zip";
+    a.click();
+  });
+}
+</script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</body>
+</html>
